@@ -1,0 +1,6 @@
+streamlit
+Pillow
+rembg
+numpy
+streamlit-image-coordinates
+onnxruntime
