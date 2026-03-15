@@ -48,17 +48,23 @@ def tarkista_kirjautuminen():
 if not tarkista_kirjautuminen(): st.stop()
 
 # --- 3. VAKIOT JA SESSION ---
+
+# 1. TÄMÄ NOPEUTTAA TAUSTAN POISTOA (Herää heti)
 @st.cache_resource
-def get_rembg_session(): return new_session()
+def get_rembg_session():
+    return new_session()
+
 rembg_session = get_rembg_session()
 
+# Vakiot (Pidetään ennallaan)
 ARKKI_L, ARKKI_K = 11811, 6614 
 DPI_VAKIO = 11.811 
 SCALE = 50  
 VALI_PX = int(5 * DPI_VAKIO)
 MARGIN = 600 
-PREVIEW_W = 1200
+PREVIEW_W = 850
 
+# 2. TÄMÄ NOPEUTTAA ALOITUSSIVUA (Esikatselu heti näkyviin)
 @st.cache_data
 def luo_vakio_esikatselupohja():
     # Skaalauskerroin esikatselulle
@@ -70,7 +76,7 @@ def luo_vakio_esikatselupohja():
     m_p = int(MARGIN * sk)
     a_w, a_h = int(ARKKI_L * sk), int(ARKKI_K * sk)
     
-    # SHAKKIRUUDUKKO (10cm ruudut skaalattuna)
+    # SHAKKIRUUDUKKO (5cm ruudut)
     ruutu_pieni = int(10 * DPI_VAKIO * sk)
     for y in range(m_p, m_p + a_h, ruutu_pieni):
         for x in range(m_p, m_p + a_w, ruutu_pieni):
@@ -80,29 +86,28 @@ def luo_vakio_esikatselupohja():
     # Arkin rajat
     draw.rectangle([m_p, m_p, m_p + a_w, m_p + a_h], outline=(150, 150, 150, 255), width=1)
     
-    # Fontti (käytetään oletusta jos muuta ei löydy)
+    # Fontti ja mittaviivat (Numerot ja sentit)
     try: font = ImageFont.load_default()
     except: font = None
 
-    # VAAKA-ASTEIKKO (Yläreuna)
-    for mm in range(0, 1001, 10): # 1cm välein
+    for mm in range(0, 1001, 10): 
         x = int(mm * DPI_VAKIO * sk) + m_p
-        if mm % 100 == 0: # 10cm välein iso viiva ja numero
+        if mm % 100 == 0:
             draw.line([x, m_p - 20, x, m_p], fill=(0,0,0,255), width=1)
             draw.text((x - 8, m_p - 40), f"{mm//10}", fill=(0,0,0,255), font=font)
-        else: # 1cm välein pieni viiva
+        else:
             draw.line([x, m_p - 10, x, m_p], fill=(100,100,100,255), width=1)
 
-    # PYSTY-ASTEIKKO (Vasen reuna)
-    for mm in range(0, 561, 10): # 1cm välein
+    for mm in range(0, 561, 10):
         y = int(mm * DPI_VAKIO * sk) + m_p
-        if mm % 100 == 0: # 10cm välein iso viiva ja numero
+        if mm % 100 == 0:
             draw.line([m_p - 20, y, m_p, y], fill=(0,0,0,255), width=1)
             draw.text((m_p - 40, y - 8), f"{mm//10}", fill=(0,0,0,255), font=font)
-        else: # 1cm välein pieni viiva
+        else:
             draw.line([m_p - 10, y, m_p, y], fill=(100,100,100,255), width=1)
     
     return pohja
+
 
 
 st.set_page_config(page_title="Silkkipaino AI Pro", page_icon="🎨", layout="wide")
