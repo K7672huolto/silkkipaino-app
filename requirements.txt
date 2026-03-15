@@ -4,3 +4,4 @@ rembg
 numpy
 streamlit-image-coordinates
 pymupdf
+
