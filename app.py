@@ -258,30 +258,31 @@ with col1:
 with col2:
     st.header("2. Esikatselu")
     
-    # 1. Haetaan puhdas mittaviivapohja (tämä on jo valmiiksi PREVIEW_W eli 1200px leveä)
-    pohja = luo_vakio_esikatselupohja().copy()
+    # 1. Haetaan valmiiksi skaalattu esikatselupohja (Välimuistista)
+    pohja_naytto = luo_vakio_esikatselupohja().copy()
     
-    # 2. Lasketaan tarkka kerroin, jolla arkki sovitetaan mittaviivapohjaan
-    # Mittaviivapohja on leveydeltään (ARKKI_L + MARGIN) -> skaalattu PREVIEW_W:ksi
+    # 2. Lasketaan kerroin (käytetään PREVIEW_W-vakiota, joka on koodin alussa)
     kerroin = PREVIEW_W / (ARKKI_L + MARGIN)
     
-    # 3. Resisoidaan arkki (logot) samalla kertoimella
+    # 3. Resisoidaan arkki (logot) esikatselukokoon
     uusi_l = int(ARKKI_L * kerroin)
     uusi_k = int(ARKKI_K * kerroin)
     arkki_res = st.session_state.arkki.resize((uusi_l, uusi_k), Image.Resampling.LANCZOS)
     
-    # 4. Lasketaan marginaalin paikka esikatselussa
+    # 4. Lasketaan nollapisteen paikka esikatselussa
     m_pos = int(MARGIN * kerroin)
     
-    # 5. Liitetään arkki pohjaan juuri oikeaan kohtaan
-    pohja.paste(arkki_res, (m_pos, m_pos), arkki_res)
+    # 5. Liitetään logot mittaviivapohjaan
+    pohja_naytto.paste(arkki_res, (m_pos, m_pos), arkki_res)
     
-    # 6. Näytetään lopputulos
-    st.image(pohja, use_container_width=True)
+    # 6. NÄYTETÄÄN IKKUNA (Säädä width=700 tästä sopivaksi)
+    # use_container_width=False varmistaa, että kuva tottelee width-arvoa
+    st.image(pohja_naytto, width=900, use_container_width=False)
     
-     # --- KAPEAMPI LATAUSPAINIKE ---
-    st.write("") # Tyhjää tilaa
-    c1, c2, c3 = st.columns([1, 2, 1]) # Keskimmäinen sarake (2) määrittää painikkeen leveyden
+    # --- KAPEAMPI LATAUSPAINIKE ---
+    st.write("") 
+    # Säädetään painike keskelle ja kapeaksi suhteilla [1, 1.2, 1]
+    c1, c2, c3 = st.columns([1, 1.2, 1]) 
     with c2:
         buf = io.BytesIO()
         st.session_state.arkki.save(buf, format="PNG")
