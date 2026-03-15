@@ -61,33 +61,49 @@ PREVIEW_W = 1200
 
 @st.cache_data
 def luo_vakio_esikatselupohja():
-    ruutu = 100 
-    pohja = Image.new("RGBA", (ARKKI_L + MARGIN, ARKKI_K + MARGIN), (255, 255, 255, 255))
+    # Skaalauskerroin esikatselulle
+    sk = PREVIEW_W / (ARKKI_L + MARGIN)
+    p_w, p_h = PREVIEW_W, int((ARKKI_K + MARGIN) * sk)
+    pohja = Image.new("RGBA", (p_w, p_h), (255, 255, 255, 255))
     draw = ImageDraw.Draw(pohja)
-    arkki_p = Image.new("RGBA", (ARKKI_L, ARKKI_K), (245, 245, 245, 255))
-    a_draw = ImageDraw.Draw(arkki_p)
-    for y in range(0, ARKKI_K, ruutu):
-        for x in range(0, ARKKI_L, ruutu):
-            if (x // ruutu + y // ruutu) % 2 == 0:
-                a_draw.rectangle([x, y, x + ruutu, y + ruutu], fill=(230, 230, 230, 255))
-    pohja.paste(arkki_p, (MARGIN, MARGIN))
-    font = None
-    for path in ["arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", "C:\\Windows\\Fonts\\arial.ttf"]:
-        try:
-            font = ImageFont.truetype(path, 160)
-            break
-        except: continue
-    if font is None: font = ImageFont.load_default()
-    for mm in range(0, 1001, 100):
-        x = int(mm * DPI_VAKIO) + MARGIN
-        draw.line([x, MARGIN-120, x, MARGIN], fill=(0,0,0,255), width=15)
-        draw.text((x - 80, MARGIN-320), f"{mm//10}cm", fill=(0,0,0,255), font=font)
-    for mm in range(0, 561, 100):
-        y = int(mm * DPI_VAKIO) + MARGIN
-        draw.line([MARGIN-120, y, MARGIN, y], fill=(0,0,0,255), width=15)
-        draw.text((MARGIN-480, y-80), f"{mm//10}cm", fill=(0,0,0,255), font=font)
-    p_h = int((ARKKI_K + MARGIN) * (PREVIEW_W / (ARKKI_L + MARGIN)))
-    return pohja.resize((PREVIEW_W, p_h), Image.Resampling.LANCZOS)
+    
+    m_p = int(MARGIN * sk)
+    a_w, a_h = int(ARKKI_L * sk), int(ARKKI_K * sk)
+    
+    # SHAKKIRUUDUKKO (10cm ruudut skaalattuna)
+    ruutu_pieni = int(10 * DPI_VAKIO * sk)
+    for y in range(m_p, m_p + a_h, ruutu_pieni):
+        for x in range(m_p, m_p + a_w, ruutu_pieni):
+            if ((x - m_p) // ruutu_pieni + (y - m_p) // ruutu_pieni) % 2 == 0:
+                draw.rectangle([x, y, x + ruutu_pieni, y + ruutu_pieni], fill=(230, 230, 230, 255))
+    
+    # Arkin rajat
+    draw.rectangle([m_p, m_p, m_p + a_w, m_p + a_h], outline=(150, 150, 150, 255), width=1)
+    
+    # Fontti (käytetään oletusta jos muuta ei löydy)
+    try: font = ImageFont.load_default()
+    except: font = None
+
+    # VAAKA-ASTEIKKO (Yläreuna)
+    for mm in range(0, 1001, 10): # 1cm välein
+        x = int(mm * DPI_VAKIO * sk) + m_p
+        if mm % 100 == 0: # 10cm välein iso viiva ja numero
+            draw.line([x, m_p - 20, x, m_p], fill=(0,0,0,255), width=1)
+            draw.text((x - 8, m_p - 40), f"{mm//10}", fill=(0,0,0,255), font=font)
+        else: # 1cm välein pieni viiva
+            draw.line([x, m_p - 10, x, m_p], fill=(100,100,100,255), width=1)
+
+    # PYSTY-ASTEIKKO (Vasen reuna)
+    for mm in range(0, 561, 10): # 1cm välein
+        y = int(mm * DPI_VAKIO * sk) + m_p
+        if mm % 100 == 0: # 10cm välein iso viiva ja numero
+            draw.line([m_p - 20, y, m_p, y], fill=(0,0,0,255), width=1)
+            draw.text((m_p - 40, y - 8), f"{mm//10}", fill=(0,0,0,255), font=font)
+        else: # 1cm välein pieni viiva
+            draw.line([m_p - 10, y, m_p, y], fill=(100,100,100,255), width=1)
+    
+    return pohja
+
 
 st.set_page_config(page_title="Silkkipaino AI Pro", page_icon="🎨", layout="wide")
 
@@ -117,103 +133,158 @@ col1, col2 = st.columns([1.3, 2.2])
 
 with col1:
     st.header("1. Hallinta")
-    uusi = st.file_uploader("Lataa logo", type=["png", "jpg", "jpeg", "webp"])
-    if uusi and uusi.name not in st.session_state.kuvat:
-        st.session_state.kuvat[uusi.name] = Image.open(uusi).convert("RGBA")
-        st.session_state.valittu = uusi.name
+    
+    # 1. KÄYTTÖOHJEET - Aina näkyvissä
+    with st.expander("📖 Käyttöohjeet", expanded=False):
+        st.markdown("""
+        1. **Lataa kuva** (PNG, JPG, PDF).
+        2. **Valitse kuva** listasta.
+        3. **Säädä koko** (mm).
+        4. **Paina SIJOITA**.
+        5. **Lataa valmis PNG** painoon.
+        """)
 
+    # 2. LATAUSKOHTA
+    uusi = st.file_uploader("Lataa logo", type=["png", "jpg", "jpeg", "webp", "pdf"])
+
+    if uusi:
+        if not uusi.name.startswith("._") and uusi.name not in st.session_state.kuvat:
+            try:
+                if uusi.name.lower().endswith(".pdf"):
+                    import fitz 
+                    file_data = uusi.read()
+                    doc = fitz.open(stream=file_data, filetype="pdf")
+                    page = doc.load_page(0) 
+                    pix = page.get_pixmap(dpi=300)
+                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                    st.session_state.kuvat[uusi.name] = img.convert("RGBA")
+                else:
+                    st.session_state.kuvat[uusi.name] = Image.open(uusi).convert("RGBA")
+                
+                st.session_state.valittu = uusi.name
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ Virhe tiedoston luvussa: {e}")
+
+    # 3. LADATTUJEN LOGOJEN LISTA JA POISTO
     if st.session_state.kuvat:
-        st.write("### Valitse logo:")
-        for n in reversed(list(st.session_state.kuvat.keys())):
+        st.write("### Valitse tai poista logo:")
+        for n in list(st.session_state.kuvat.keys()):
             with st.container(border=True):
-                cl1, cl2 = st.columns(2)
+                cl1, cl2 = st.columns([1.5, 2])
                 thumb = st.session_state.kuvat[n].copy()
                 thumb.thumbnail((150, 150))
                 cl1.image(thumb)
-                if cl2.button(f"VALITSE: {n[:12]}", key=f"btn_{n}", type="primary" if st.session_state.valittu == n else "secondary", use_container_width=True):
-                    st.session_state.valittu = n; st.session_state.kierto = 0; st.rerun()
+                
+                if cl2.button(f"VALITSE", key=f"btn_{n}", type="primary" if st.session_state.valittu == n else "secondary", use_container_width=True):
+                    st.session_state.valittu = n; st.rerun()
+                
+                if cl2.button(f"🗑️ Poista", key=f"del_{n}", use_container_width=True):
+                    del st.session_state.kuvat[n]
+                    if st.session_state.valittu == n:
+                        st.session_state.valittu = None
+                    st.rerun()
+
+    # --- TÄRKEÄÄ: SEURAAVA KOODI ON NYT SILMUKAN ULKOPUOLELLA ---
+    akt = st.session_state.valittu
+    if akt and akt in st.session_state.kuvat:
+        st.divider()
+        img_info = st.session_state.kuvat[akt]
+        img_raw = img_info.rotate(st.session_state.kierto, expand=True)
         
-        akt = st.session_state.valittu
-        if akt:
-            st.divider()
-            img_info = st.session_state.kuvat[akt]
-            img_raw = img_info.rotate(st.session_state.kierto, expand=True)
-            dpi_val = img_info.info.get('dpi', (300, 300))
-            dpi = dpi_val[0] if isinstance(dpi_val, (tuple, list)) else (dpi_val if dpi_val else 300)
+        # DPI-laskenta (varmistetaan ettei kaadu)
+        dpi_val = img_info.info.get('dpi', (300, 300))
+        dpi = dpi_val[0] if isinstance(dpi_val, (tuple, list)) else (dpi_val if dpi_val else 300)
+        
+        with st.expander("🎨 Värin muokkaus (Pipetti)"):
+            coords = streamlit_image_coordinates(img_raw, width=280, key="pipetti")
+            if coords:
+                rx = int(coords["x"] * img_raw.width / 280)
+                ry = int(coords["y"] * img_raw.height / (280 * img_raw.height / img_raw.width))
+                pixel = img_raw.getpixel((min(rx, img_raw.width-1), min(ry, img_raw.height-1)))
+                st.session_state.v_etsi = '#{:02x}{:02x}{:02x}'.format(*pixel[:3])
             
-            with st.expander("🎨 Värin muokkaus (Pipetti)"):
-                coords = streamlit_image_coordinates(img_raw, width=280, key="pipetti")
-                if coords:
-                    rx = int(coords["x"] * img_raw.width / 280)
-                    ry = int(coords["y"] * img_raw.height / (280 * img_raw.height / img_raw.width))
-                    pixel = img_raw.getpixel((min(rx, img_raw.width-1), min(ry, img_raw.height-1)))
-                    st.session_state.v_etsi = '#{:02x}{:02x}{:02x}'.format(*pixel[:3])
-                
-                st.session_state.v_etsi = st.color_picker("Etsi väri", st.session_state.v_etsi)
-                st.session_state.v_uusi = st.color_picker("Uusi väri", st.session_state.v_uusi)
-                st.session_state.v_tol = st.slider("Väritarkkuus", 0, 255, st.session_state.v_tol)
-                
-                st.write("---")
-                st.write("**Esikatselu:**")
-                preview_img = img_raw.copy()
-                preview_img.thumbnail((200, 200))
-                preview_colored = vaihda_vari(preview_img, st.session_state.v_etsi, st.session_state.v_uusi, st.session_state.v_tol)
-                st.image(preview_colored)
-                
-                if st.button("♻️ Palauta värit", use_container_width=True):
-                    st.session_state.v_etsi = "#000000"; st.session_state.v_uusi = "#000000"; st.session_state.v_tol = 0; st.rerun()
+            st.session_state.v_etsi = st.color_picker("Etsi väri", st.session_state.v_etsi)
+            st.session_state.v_uusi = st.color_picker("Uusi väri", st.session_state.v_uusi)
+            st.session_state.v_tol = st.slider("Väritarkkuus", 0, 255, st.session_state.v_tol)
+            
+            st.write("---")
+            preview_img = img_raw.copy()
+            preview_img.thumbnail((200, 200))
+            preview_colored = vaihda_vari(preview_img, st.session_state.v_etsi, st.session_state.v_uusi, st.session_state.v_tol)
+            st.image(preview_colored)
+            
+            if st.button("♻️ Palauta värit", use_container_width=True):
+                st.session_state.v_etsi = "#000000"; st.session_state.v_uusi = "#000000"; st.session_state.v_tol = 0; st.rerun()
 
-            suhde = img_raw.height / img_raw.width
-            moodi = st.radio("Koon säätö:", ["Leveys", "Korkeus"], horizontal=True)
-            if moodi == "Leveys":
-                lev_mm = st.number_input("Leveys (mm)", value=float(round(img_raw.width/dpi*25.4, 1)))
-                l_px, k_px = int(lev_mm * DPI_VAKIO), int(int(lev_mm * DPI_VAKIO) * suhde)
-            else:
-                kor_mm = st.number_input("Korkeus (mm)", value=float(round(img_raw.height/dpi*25.4, 1)))
-                k_px, l_px = int(kor_mm * DPI_VAKIO), int(int(kor_mm * DPI_VAKIO) / suhde)
+        suhde = img_raw.height / img_raw.width
+        moodi = st.radio("Koon säätö:", ["Leveys", "Korkeus"], horizontal=True)
+        if moodi == "Leveys":
+            lev_mm = st.number_input("Leveys (mm)", value=float(round(img_raw.width/dpi*25.4, 1)))
+            l_px, k_px = int(lev_mm * DPI_VAKIO), int(int(lev_mm * DPI_VAKIO) * suhde)
+        else:
+            kor_mm = st.number_input("Korkeus (mm)", value=float(round(img_raw.height/dpi*25.4, 1)))
+            k_px, l_px = int(kor_mm * DPI_VAKIO), int(int(kor_mm * DPI_VAKIO) / suhde)
 
-            kpl = st.number_input("Määrä", 1, 500, 1); p_tausta = st.checkbox("Poista tausta")
-            if st.button("🚀 SIJOITA", type="primary", use_container_width=True):
-                st.session_state.hist.append((st.session_state.arkki.copy(), st.session_state.occ.copy()))
-                with st.spinner("Sijoitetaan..."):
-                    base = img_raw.resize((l_px, k_px), Image.Resampling.LANCZOS)
-                    base = vaihda_vari(base, st.session_state.v_etsi, st.session_state.v_uusi, st.session_state.v_tol)
-                    if p_tausta: base = remove(base, session=rembg_session)
-                    for _ in range(kpl):
-                        x, y = etsi_paikka(base.width, base.height, st.session_state.occ, SCALE, VALI_PX)
-                        if x is not None:
-                            st.session_state.arkki.paste(base, (x, y), base)
-                            st.session_state.occ[int(y/SCALE):int((y+base.height+VALI_PX)/SCALE), int(x/SCALE):int((x+base.width+VALI_PX)/SCALE)] = True
-                        else: break
-                st.rerun()
+        kpl = st.number_input("Määrä", 1, 500, 1)
+        p_tausta = st.checkbox("Poista tausta")
+        
+        if st.button("🚀 SIJOITA", type="primary", use_container_width=True):
+            st.session_state.hist.append((st.session_state.arkki.copy(), st.session_state.occ.copy()))
+            with st.spinner("Sijoitetaan..."):
+                base = img_raw.resize((l_px, k_px), Image.Resampling.LANCZOS)
+                base = vaihda_vari(base, st.session_state.v_etsi, st.session_state.v_uusi, st.session_state.v_tol)
+                if p_tausta: base = remove(base, session=rembg_session)
+                for _ in range(kpl):
+                    x, y = etsi_paikka(base.width, base.height, st.session_state.occ, SCALE, VALI_PX)
+                    if x is not None:
+                        st.session_state.arkki.paste(base, (x, y), base)
+                        st.session_state.occ[int(y/SCALE):int((y+base.height+VALI_PX)/SCALE), int(x/SCALE):int((x+base.width+VALI_PX)/SCALE)] = True
+                    else: break
+            st.rerun()
 
+    # Hallintapainikkeet (Tyhjennä/Peru) aina alareunassa
     st.divider()
     c_t, c_p = st.columns(2)
     if c_t.button("🗑️ Tyhjennä", use_container_width=True):
         st.session_state.arkki = luo_puhdas_pohja(); st.session_state.occ.fill(False); st.session_state.hist = []; st.rerun()
     if c_p.button("↩️ Peru viimeisin", use_container_width=True) and st.session_state.hist:
         st.session_state.arkki, st.session_state.occ = st.session_state.hist.pop(); st.rerun()
-
 with col2:
     st.header("2. Esikatselu")
+    
+    # 1. Haetaan puhdas mittaviivapohja (tämä on jo valmiiksi PREVIEW_W eli 1200px leveä)
     pohja = luo_vakio_esikatselupohja().copy()
-    arkki_res = st.session_state.arkki.resize((PREVIEW_W, int(PREVIEW_W * ARKKI_K / ARKKI_L)), Image.Resampling.LANCZOS)
-    pohja.paste(arkki_res, (int(MARGIN * PREVIEW_W / (ARKKI_L + MARGIN)), int(MARGIN * PREVIEW_W / (ARKKI_L + MARGIN))), arkki_res)
     
-    # KESKITYS: Luodaan kolme saraketta, joista keskimmäinen sisältää kuvan
-    # Säädä lukuja [1, 5, 1] jos haluat kuvasta isomman tai pienemmän suhteessa tyhjään tilaan
-    c_vasen, c_keski, c_oikea = st.columns([1, 15, 1])
+    # 2. Lasketaan tarkka kerroin, jolla arkki sovitetaan mittaviivapohjaan
+    # Mittaviivapohja on leveydeltään (ARKKI_L + MARGIN) -> skaalattu PREVIEW_W:ksi
+    kerroin = PREVIEW_W / (ARKKI_L + MARGIN)
     
-    with c_keski:
-        st.image(pohja, use_container_width=True)
-        
-        # KAVENNETTU LATAUSNAPPI (Nyt myös keskellä kuvan alla)
+    # 3. Resisoidaan arkki (logot) samalla kertoimella
+    uusi_l = int(ARKKI_L * kerroin)
+    uusi_k = int(ARKKI_K * kerroin)
+    arkki_res = st.session_state.arkki.resize((uusi_l, uusi_k), Image.Resampling.LANCZOS)
+    
+    # 4. Lasketaan marginaalin paikka esikatselussa
+    m_pos = int(MARGIN * kerroin)
+    
+    # 5. Liitetään arkki pohjaan juuri oikeaan kohtaan
+    pohja.paste(arkki_res, (m_pos, m_pos), arkki_res)
+    
+    # 6. Näytetään lopputulos
+    st.image(pohja, use_container_width=True)
+    
+     # --- KAPEAMPI LATAUSPAINIKE ---
+    st.write("") # Tyhjää tilaa
+    c1, c2, c3 = st.columns([1, 2, 1]) # Keskimmäinen sarake (2) määrittää painikkeen leveyden
+    with c2:
         buf = io.BytesIO()
         st.session_state.arkki.save(buf, format="PNG")
-        
-        # Tehdään latausnapille oma kapeampi keskitys
-        l_v, l_k, l_o = st.columns([1, 1, 1])
-        with l_k:
-            st.download_button("📥 Lataa valmis PNG painoon", buf.getvalue(), "arkki.png", "image/png", use_container_width=True)
-
+        st.download_button(
+            label="📥 Lataa valmis PNG",
+            data=buf.getvalue(),
+            file_name="arkki.png",
+            mime="image/png",
+            use_container_width=True
+        )
 
