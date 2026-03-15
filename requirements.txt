@@ -3,5 +3,4 @@ Pillow
 rembg
 numpy
 streamlit-image-coordinates
-onnxruntime
 pymupdf
