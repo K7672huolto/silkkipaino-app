@@ -1,8 +1,8 @@
 streamlit
 Pillow
-rembg
+rembg[onnxruntime]
 numpy
 streamlit-image-coordinates
-onnxruntime
 pymupdf
+
 
