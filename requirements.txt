@@ -5,6 +5,9 @@ onnxruntime
 numpy
 streamlit-image-coordinates
 pymupdf
+--extra-index-url https://download.pytorch.org
+torch
+torchvision
 
 
 
