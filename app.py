@@ -139,17 +139,18 @@ with c_out:
 col1, col2 = st.columns([1.4, 2.2])
 
 with col1:
-    # 1. KÄYTTÖOHJEET - Aina näkyvissä
+    # 1. KÄYTTÖOHJEET
     with st.expander("📖 Käyttöohjeet", expanded=False):
         st.markdown("""
         1. **Lataa kuva** (PNG, JPG, JPEG, WEBP, PDF).
         2. **Valitse kuva** listasta.
-        3. **Poista tausta** tarvittaessa AI
+        3. **Poista tausta** tarvittaessa AI.
         4. **Säädä koko** (mm).
-        5. **Muuta väriä** helutessasi.
+        5. **Muuta väriä** halutessasi.
         6. **Paina SIJOITA**.
         7. **Valmistele ja lataa valmis PNG** painoon.
         """)
+        
     uusi = st.file_uploader("Lataa logo", type=["png", "jpg", "jpeg", "webp", "pdf"])
     if uusi:
         if uusi.name not in st.session_state.kuvat:
@@ -183,127 +184,146 @@ with col1:
 
     if st.session_state.valittu:
         akt = st.session_state.valittu
-        # Varmistetaan, että käytetään aina uusinta versiota session_statesta
         img_raw = st.session_state.kuvat[akt]
         st.divider()
         
-        # --- 1. MUOKKAUSNAPIT ---
-        c1, c2, c3 = st.columns(3)
-
+        # --- 1. VÄRIN VAIHTO JA MUOKKAUS ---
+        st.write("**1. Väri ja muokkaus**")
+        
+        c1, c2 = st.columns(2)
         if c1.button("✨ Poista tausta", use_container_width=True):
             from rembg import remove
-            with st.spinner("Käsitellään..."):
-                sess = get_rembg_session()
-                img_bg = remove(st.session_state.kuvat[akt], session=sess)
-                st.session_state.kuvat[akt] = trim_transparency(img_bg)
-                st.rerun()
-
+            st.session_state.kuvat[akt] = trim_transparency(remove(img_raw, session=get_rembg_session()))
+            st.rerun()
+            
         if c2.button("🔄 Palauta alkuperäinen", use_container_width=True):
             st.session_state.kuvat[akt] = st.session_state.alkup[akt].copy()
-            if "kuva_historia" in st.session_state and akt in st.session_state.kuva_historia:
-                del st.session_state.kuva_historia[akt]
             st.rerun()
 
-        if c3.button("↪️ Käännä 90°", use_container_width=True):
-            kaannetty = st.session_state.kuvat[akt].rotate(90, expand=True)
-            st.session_state.kuvat[akt] = trim_transparency(kaannetty)
-            st.rerun()
-
-        # --- 2. VÄRIN VAIHTO JA PIPETTI ---
-        st.write("**Värin vaihto**")
+        # Pipetti-työkalu
+        w_curr, h_curr = img_raw.size
+        pipetti_key = f"pipetti_{akt}_{w_curr}_{h_curr}"
+        coords = streamlit_image_coordinates(img_raw, width=250, key=pipetti_key)
         
-        # Pipetti-esikatselu
-        coords = streamlit_image_coordinates(st.session_state.kuvat[akt], width=250, key="pipetti_muokkaus")
         if coords:
-            # Lasketaan suhde, jotta pipetti osuu oikeaan kohtaan
-            w_alku, h_alku = st.session_state.kuvat[akt].size
-            x = int(coords["x"] * (w_alku / 250))
-            y = int(coords["y"] * (h_alku / (250 * (h_alku / w_alku))))
-            # Varmistetaan rajat
-            x = max(0, min(x, w_alku - 1))
-            y = max(0, min(y, h_alku - 1))
-            poimittu_vari = st.session_state.kuvat[akt].getpixel((x, y))
+            x = int(coords["x"] * (w_curr / 250))
+            y = int(coords["y"] * (h_curr / (250 * (h_curr / w_curr))))
+            poimittu_vari = img_raw.getpixel((max(0, min(x, w_curr - 1)), max(0, min(y, h_curr - 1))))
             st.session_state.v_etsi = '#%02x%02x%02x' % poimittu_vari[:3]
 
         v_c1, v_c2 = st.columns(2)
-        # Uniikit key-tunnisteet estävät DuplicateElementId-virheen
-        st.session_state.v_etsi = v_c1.color_picker("Etsi väri", st.session_state.v_etsi, key="cp_etsi")
-        st.session_state.v_uusi = v_c2.color_picker("Uusi väri", st.session_state.v_uusi, key="cp_uusi")
-        st.session_state.v_tol = st.slider("Toleranssi", 0, 255, st.session_state.v_tol, key="sl_tol")
+        st.session_state.v_etsi = v_c1.color_picker("Etsi väri", st.session_state.v_etsi)
+        st.session_state.v_uusi = v_c2.color_picker("Uusi väri", st.session_state.v_uusi)
         
-        vc_apply, vc_undo = st.columns(2)
-
-        if vc_apply.button("Käytä värimuutos", use_container_width=True, key="btn_apply_color"):
-            if "kuva_historia" not in st.session_state:
-                st.session_state.kuva_historia = {}
-            # Tallennetaan nykyinen vaihe muistiin ennen muutosta
-            st.session_state.kuva_historia[akt] = st.session_state.kuvat[akt].copy()
-            
-            uusi_kuva = vaihda_vari(st.session_state.kuvat[akt], st.session_state.v_etsi, st.session_state.v_uusi, st.session_state.v_tol)
-            st.session_state.kuvat[akt] = uusi_kuva
+        if st.button("Käytä värimuutos", use_container_width=True):
+            if "kuva_historia" not in st.session_state: st.session_state.kuva_historia = {}
+            st.session_state.kuva_historia[akt] = img_raw.copy()
+            st.session_state.kuvat[akt] = vaihda_vari(img_raw, st.session_state.v_etsi, st.session_state.v_uusi, st.session_state.v_tol)
             st.rerun()
 
-        has_history = "kuva_historia" in st.session_state and akt in st.session_state.kuva_historia
-        if vc_undo.button("↩️ Peru väri", use_container_width=True, disabled=not has_history, key="btn_undo_color"):
-            st.session_state.kuvat[akt] = st.session_state.kuva_historia[akt]
-            del st.session_state.kuva_historia[akt]
-            st.rerun()
-
-        # --- 3. KOON SÄÄTÖ JA SIJOITUS ---
+                        # --- 2. KOON SÄÄTÖ ---
         st.divider()
-        suhde = img_raw.height / img_raw.width
-        dpi_t = img_raw.info.get('dpi', (300, 300))
-        dpi = dpi_t[0] if isinstance(dpi_t, tuple) else 300
-        oletus_w = int(img_raw.width / (dpi / 25.4))
-        
-        col_w, col_h = st.columns(2)
-        l_mm = col_w.number_input("Leveys (mm)", value=oletus_w)
-        h_mm = col_h.number_input("Korkeus (mm)", value=int(l_mm * suhde))
-        maara = st.number_input("Määrä", 1, 500, 1)
+        st.write("**2. Koon säätö (mm)**")
 
-        if st.button("🚀 SIJOITA ARKKIIN", type="primary", use_container_width=True, key="btn_sijoita"):
+        # Alustetaan alkuperäinen leveys (Varmistetaan DPI-käsittely)
+        if f"w_mm_{akt}" not in st.session_state:
+            dpi_info = img_raw.info.get('dpi', (300, 300))
+            # Jos dpi on tupla (esim (300, 300)), otetaan vain ensimmäinen arvo
+            dpi = dpi_info[0] if isinstance(dpi_info, tuple) else dpi_info
+            st.session_state[f"w_mm_{akt}"] = int(w_curr / (dpi / 25.4))
+
+        # KÄYTTÄJÄN ASETTAMA PERUSLEVEYS
+        perus_l_mm = st.number_input("Logon leveys (mm)", min_value=1, max_value=1000, key=f"w_mm_{akt}")
+
+        # --- 3. KÄÄNTÖ JA SIJOITUS ---
+        st.divider()
+        st.write("**3. Sijoitusasetukset**")
+        
+        kaanna = st.checkbox("Käännä pystyyn (90°)", key=f"rot_check_{akt}")
+        
+        # Lasketaan alkuperäinen kuvasuhde
+        w_orig, h_orig = img_raw.size
+        suhde = h_orig / w_orig
+        perus_h_mm = int(perus_l_mm * suhde)
+
+        # MÄÄRITETÄÄN LOPULLISET MITAT ARKILLE
+        if kaanna:
+            # VAIHDETAAN PAIKKAA: 100x50 -> 50x100
+            l_final_mm = perus_h_mm
+            h_final_mm = perus_l_mm
+        else:
+            # NORMAALI: 100x50
+            l_final_mm = perus_l_mm
+            h_final_mm = perus_h_mm
+            
+        st.info(f"Koko arkilla: {l_final_mm} mm x {h_final_mm} mm")
+
+        maara = st.number_input("Määrä (kpl)", 1, 500, 1, key=f"q_{akt}")
+
+        if st.button("🚀 SIJOITA ARKKIIN", type="primary", use_container_width=True):
+            # Tallennetaan nykyinen tila historiaan
             st.session_state.historia.append({
                 "sijoitukset": list(st.session_state.sijoitukset),
                 "occ": st.session_state.occ.copy()
             })
-            if len(st.session_state.historia) > 10: st.session_state.historia.pop(0)
-
-            w_px = int(l_mm * DPI_VAKIO)
-            h_px = int(w_px * suhde)
             
+            # Muunnetaan millimetrit pikseleiksi (DPI_VAKIO on yleensä 300 / 25.4)
+            final_w_px = int(l_final_mm * DPI_VAKIO)
+            final_h_px = int(h_final_mm * DPI_VAKIO)
+            
+            # Käytetään s_id:tä erottamaan käännetyt esikatselussa
+            s_id = f"{akt}_90" if kaanna else akt
+
             onnistui = 0
             for _ in range(maara):
-                px, py = etsi_paikka(w_px, h_px, st.session_state.occ, SCALE, VALI_PX)
+                px, py = etsi_paikka(final_w_px, final_h_px, st.session_state.occ, SCALE, VALI_PX)
                 if px is not None:
                     st.session_state.sijoitukset.append({
-                        "id": akt, "x": int(px), "y": int(py), "w": w_px, "h": h_px
+                        "id": s_id, "x": int(px), "y": int(py), "w": final_w_px, "h": final_h_px
                     })
-                    sw, sh = int((w_px + VALI_PX)/SCALE), int((h_px + VALI_PX)/SCALE)
+                    # Varataan tila
+                    sw, sh = int((final_w_px + VALI_PX)/SCALE), int((final_h_px + VALI_PX)/SCALE)
                     st.session_state.occ[int(py/SCALE):int(py/SCALE)+sh, int(px/SCALE):int(px/SCALE)+sw] = True
                     onnistui += 1
-                else: break
+                else:
+                    st.warning(f"Arkki täynnä! Sijoitettiin {onnistui} kpl.")
+                    break
             st.rerun()
 
-
+        
 with col2:
     st.header("2. Esikatselu")
     pohja_data = luo_vakio_esikatselupohja()
     pohja, m_p, sk = pohja_data
     pohja_esikatselu = pohja.copy()
     
-    # MUUTETTU: Piirretään esikatselu lennosta sijoituslistasta
+        # MUUTETTU: Piirretään esikatselu lennosta sijoituslistasta
     for s in st.session_state.sijoitukset:
-        logo = st.session_state.kuvat[s["id"]]
-        l_pieni = logo.resize((int(s["w"] * sk), int(s["h"] * sk)), Image.LANCZOS)
-        pohja_esikatselu.paste(l_pieni, (int(s["x"] * sk + m_p), int(s["y"] * sk + m_p)), l_pieni)
+        # 1. Poistetaan "_90" id:stä, jotta löydetään alkuperäinen kuva sanakirjasta
+        perus_id = s["id"].replace("_90", "")
+        
+        if perus_id in st.session_state.kuvat:
+            logo = st.session_state.kuvat[perus_id]
+            
+            # 2. Jos id:ssä oli "_90", käännetään logo VAIN esikatselua varten
+            if s["id"].endswith("_90"):
+                logo = logo.rotate(90, expand=True)
+                # Trimmaus varmistaa, ettei kääntö jätä tyhjää tilaa
+                logo = trim_transparency(logo)
+            
+            # 3. Skaalataan ja liitetään esikatselupohjaan
+            l_pieni = logo.resize((int(s["w"] * sk), int(s["h"] * sk)), Image.LANCZOS)
+            pohja_esikatselu.paste(l_pieni, (int(s["x"] * sk + m_p), int(s["y"] * sk + m_p)), l_pieni)
+
     
-    st.image(pohja_esikatselu, use_container_width=False)
+        # use_container_width=False ja määritetty leveys pitää kuvan kurissa
+    st.image(pohja_esikatselu, width=PREVIEW_W, use_container_width=False)
     
     # HALLINTANAPIT
     c1, c2, c3 = st.columns(3)
     
     if st.session_state.historia:
-        if c1.button("↩️ Peru sijoitus", use_container_width=True):
+        if c1.button("↩️ Peru viimeisin sijoitus", use_container_width=True):
             h = st.session_state.historia.pop()
             st.session_state.sijoitukset = h["sijoitukset"]
             st.session_state.occ = h["occ"]
