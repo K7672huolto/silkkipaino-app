@@ -3,41 +3,51 @@ from PIL import Image, ImageDraw, ImageFont
 import io
 import numpy as np
 from streamlit_image_coordinates import streamlit_image_coordinates
+import fitz  # Siirretty alkuun
+from rembg import remove, new_session  # Siirretty alkuun nopeuden takia
 
 # --- 1. APUTOIMINNOT ---
+
+@st.cache_resource
+def get_rembg_session():
+    # Tämä lataa AI-mallin muistiin vain kerran
+    return new_session()
+
 def trim_transparency(img):
     if img.mode != 'RGBA':
         img = img.convert('RGBA')
     bbox = img.getbbox()
     return img.crop(bbox) if bbox else img
 
+@st.cache_data(max_entries=10, show_spinner=False)
 def vaihda_vari(img, etsi_hex, uusi_hex, tol):
     if tol <= 0 or etsi_hex.lower() == uusi_hex.lower(): 
         return img
-    # Tehdään kopio ja varmistetaan RGBA-muoto
-    tyo_kuva = img.copy().convert("RGBA")
+    tyo_kuva = img.convert("RGBA")
     data = np.array(tyo_kuva)
     
     r1, g1, b1 = [int(etsi_hex.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)]
     r2, g2, b2 = [int(uusi_hex.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)]
     
-    # Lasketaan ero pikseleissä
     diff = np.sum(np.abs(data[:,:,:3].astype(np.int16) - [r1, g1, b1]), axis=2)
-    mask = (diff <= tol) & (data[:,:,3] > 10) # Vain näkyvät pikselit
+    mask = (diff <= tol) & (data[:,:,3] > 10)
     
     data[mask, :3] = [r2, g2, b2]
     return Image.fromarray(data)
-
 
 def etsi_paikka(w_px, h_px, occ, SCALE, VALI_PX):
     rows, cols = occ.shape
     sw, sh = int((w_px + VALI_PX)/SCALE), int((h_px + VALI_PX)/SCALE)
     if sh >= rows or sw >= cols: return None, None
-    for y in range(0, rows - sh, 2):
-        for x in range(0, cols - sw, 2):
+    
+    # Optimoitu askellus: 4 tai 5 nopeuttaa hakua merkittävästi verrattuna 2:een
+    step = 4 
+    for y in range(0, rows - sh, step):
+        for x in range(0, cols - sw, step):
             if not np.any(occ[y:y+sh, x:x+sw]): 
                 return x*SCALE, y*SCALE
     return None, None
+
 
 # --- 2. KIRJAUTUMINEN ---
 def tarkista_kirjautuminen():
@@ -297,26 +307,20 @@ with col2:
     pohja, m_p, sk = pohja_data
     pohja_esikatselu = pohja.copy()
     
-        # MUUTETTU: Piirretään esikatselu lennosta sijoituslistasta
+    # 1. NOPEA ESIKATSELU (Vain ruudulle näkyvä kuva)
     for s in st.session_state.sijoitukset:
-        # 1. Poistetaan "_90" id:stä, jotta löydetään alkuperäinen kuva sanakirjasta
         perus_id = s["id"].replace("_90", "")
-        
         if perus_id in st.session_state.kuvat:
             logo = st.session_state.kuvat[perus_id]
             
-            # 2. Jos id:ssä oli "_90", käännetään logo VAIN esikatselua varten
             if s["id"].endswith("_90"):
                 logo = logo.rotate(90, expand=True)
-                # Trimmaus varmistaa, ettei kääntö jätä tyhjää tilaa
                 logo = trim_transparency(logo)
             
-            # 3. Skaalataan ja liitetään esikatselupohjaan
-            l_pieni = logo.resize((int(s["w"] * sk), int(s["h"] * sk)), Image.LANCZOS)
+            # Käytetään BILINEAR-suodatinta esikatselussa (nopeampi)
+            l_pieni = logo.resize((int(s["w"] * sk), int(s["h"] * sk)), Image.BILINEAR)
             pohja_esikatselu.paste(l_pieni, (int(s["x"] * sk + m_p), int(s["y"] * sk + m_p)), l_pieni)
 
-    
-        # use_container_width=False ja määritetty leveys pitää kuvan kurissa
     st.image(pohja_esikatselu, width=PREVIEW_W, use_container_width=False)
     
     # HALLINTANAPIT
@@ -335,13 +339,22 @@ with col2:
         st.session_state.historia = []
         st.rerun()
 
-    # MUUTETTU: Renderöidään iso PNG vain kun sitä pyydetään
+    # 2. ISO PNG LATAUS (Vain kun nappia painetaan)
     if st.session_state.sijoitukset:
         if c3.button("📥 VALMISTELE JA LATAA PNG PAINOON", type="primary", use_container_width=True):
             with st.spinner("Luodaan korkearesoluutioista arkia..."):
                 iso_arkki = Image.new("RGBA", (11811, 6614), (0, 0, 0, 0))
+                
                 for s in st.session_state.sijoitukset:
-                    l_res = st.session_state.kuvat[s["id"]].resize((s["w"], s["h"]), Image.LANCZOS)
+                    perus_id = s["id"].replace("_90", "")
+                    l_res = st.session_state.kuvat[perus_id]
+                    
+                    if s["id"].endswith("_90"):
+                        l_res = l_res.rotate(90, expand=True)
+                        l_res = trim_transparency(l_res)
+                    
+                    # Käytetään korkeinta laatua (LANCZOS) vain lopulliseen PNG:hen
+                    l_res = l_res.resize((s["w"], s["h"]), Image.LANCZOS)
                     iso_arkki.paste(l_res, (s["x"], s["y"]), l_res)
                 
                 buf = io.BytesIO()
