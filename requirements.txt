@@ -5,9 +5,6 @@ streamlit-image-coordinates
 pymupdf
 onnxruntime
 rembg
---extra-index-url https://download.pytorch.org
-torch
-torchvision
 
 
 
