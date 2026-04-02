@@ -60,7 +60,7 @@ def etsi_paikka_nesting(w_px, h_px, occ, scale, vali_px):
 
 @st.cache_data
 def luo_vakio_esikatselupohja(arkki_l, arkki_k, dpi_v, preview_w):
-    as_margin = 400
+    as_margin = 500  # Nostettu marginaalia, jotta numerot mahtuvat
     sk = preview_w / (arkki_l + as_margin)
     p_w, p_h = preview_w, int((arkki_k + as_margin) * sk)
     pohja = Image.new("RGBA", (p_w, p_h), (255, 255, 255, 255))
@@ -77,17 +77,20 @@ def luo_vakio_esikatselupohja(arkki_l, arkki_k, dpi_v, preview_w):
     except: font = None
     for mm in range(0, 1001, 100):
         x = int(mm * dpi_v * sk) + m_p
-        draw.line([x, m_p - 15, x, m_p], fill=(0,0,0,255), width=1)
-        if font: draw.text((x - 8, m_p - 35), f"{mm // 10}", fill=(0,0,0,255), font=font)
+        draw.line([x, m_p - 15, x, m_p], fill=(0,0,0,255), width=2)
+        if font: draw.text((x - 8, m_p - 45), f"{mm // 10}", fill=(0,0,0,255), font=font)
     for mm in range(0, 561, 100):
         y = int(mm * dpi_v * sk) + m_p
-        draw.line([m_p - 15, y, m_p, y], fill=(0,0,0,255), width=1)
-        if font: draw.text((m_p - 35, y - 8), f"{mm // 10}", fill=(0,0,0,255), font=font)
+        draw.line([m_p - 15, y, m_p, y], fill=(0,0,0,255), width=2)
+        # Siirretty pystynumeroita vasemmalle (m_p - 50), jotta ne näkyvät kokonaan
+        if font: draw.text((m_p - 50, y - 8), f"{mm // 10}", fill=(0,0,0,255), font=font)
     return pohja, m_p, sk
 
 # --- 2. KIRJAUTUMINEN ---
 def tarkista_kirjautuminen():
-    if "kirjautunut" not in st.session_state: st.session_state.kirjautunut = False
+    if "kirjautunut" not in st.session_state: 
+        st.session_state.kirjautunut = False
+        
     if not st.session_state.kirjautunut:
         _, col, _ = st.columns([1, 1.2, 1])
         with col:
@@ -95,38 +98,54 @@ def tarkista_kirjautuminen():
             u = st.text_input("Tunnus")
             p = st.text_input("Salasana", type="password")
             if st.button("Kirjaudu", use_container_width=True):
-                try: t_ref, p_ref = st.secrets["APP_USER"], st.secrets["APP_PASSWORD"]
-                except: t_ref, p_ref = "admin", "printti2024"
-                if u == t_ref and p == p_ref:
+                sallitut = st.secrets["PASSWORDS"]
+                if u in sallitut and p == sallitut[u]:
                     st.session_state.kirjautunut = True
+                    st.session_state.kayttaja = u
                     st.rerun()
-                else: st.error("❌ Virheelliset tunnukset")
+                else:
+                    st.error("❌ Virheellinen tunnus tai salasana")
         return False
     return True
 
-if not tarkista_kirjautuminen(): st.stop()
+if not tarkista_kirjautuminen():
+    st.stop()
 
-# Vakiot
+# --- 3. BANNERI ---
+c_banner, c_out = st.columns([8, 1.2])
+with c_banner:
+    k_nimi = st.session_state.get("kayttaja", "Vieras")
+    # Nostettu padding 35px, jotta banneri on korkeampi
+    st.markdown(f'''
+        <div style="background-color:#1E1E1E; padding:20px; border-radius:10px; border-left: 8px solid #00FF00;">
+            <h1 style="color:white; margin:0;">🚀 Silkkipaino AI Pro</h1>
+            <p style="color:#BBBBBB; margin:5px 0 0 0;">👤 Kirjautuneena: <b>{k_nimi}</b> | Nesting 560 x 1000mm M.P 2.04</p>
+        </div>
+    ''', unsafe_allow_html=True)
+with c_out:
+    if st.button("🔴 Kirjaudu ulos", use_container_width=True):
+        st.session_state.clear()
+        st.rerun()
+
+# --- 4. VAKIOT JA ALUSTUKSET ---
 ARKKI_L, ARKKI_K = 11811, 6614
 DPI_VAKIO = 11.811 
 SCALE = 25
 VALI_PX = int(2 * DPI_VAKIO)
 PREVIEW_W = 850
 
-if "occ" not in st.session_state: st.session_state.occ = np.zeros((int(ARKKI_K/SCALE)+1, int(ARKKI_L/SCALE)+1), dtype=bool)
-if "sijoitukset" not in st.session_state: st.session_state.sijoitukset = []
-if "kuvat" not in st.session_state: st.session_state.kuvat = {}
-if "alkup" not in st.session_state: st.session_state.alkup = {}
-if "valittu" not in st.session_state: st.session_state.valittu = None
-if "v_etsi" not in st.session_state: st.session_state.v_etsi = "#000000"
+# Alustetaan session_state muuttujat kerralla
+for key, val in {
+    "occ": np.zeros((int(ARKKI_K/SCALE)+1, int(ARKKI_L/SCALE)+1), dtype=bool),
+    "sijoitukset": [], "kuvat": {}, "alkup": {}, "valittu": None, 
+    "v_etsi": "#000000", "arkki_nro": 100
+}.items():
+    if key not in st.session_state: st.session_state[key] = val
 
-# --- 3. UI ---
-c_banner, c_out = st.columns([8, 1.2])
-with c_banner:
-    st.markdown('''<div style="background-color:#1E1E1E; padding:20px; border-radius:10px; border-left: 8px solid #00FF00;"><h1 style="color:white; margin:0;">🚀 Silkkipaino AI Pro</h1><p style="color:#BBBBBB; margin:5px 0 0 0;">Nesting 560 x 1000mm MP 2.01</p></div>''', unsafe_allow_html=True)
-with c_out:
-    if st.button("🔴 Kirjaudu ulos", use_container_width=True):
-        st.session_state.clear(); st.rerun()
+# Ohjeet ja muu sisältö jatkuu tästä...
+
+
+
 
  # KATTAVAT KÄYTTÖOHJEET
 with st.expander("📖 KATTAVAT KÄYTTÖOHJEET - LUE TÄSTÄ", expanded=False):
@@ -198,7 +217,6 @@ with col1:
             st.divider()
             st.info(f"🎯 Muokataan: {sel_name}")
             
-            # KORJAUS: Älykäs esikatselun koon laskenta (max 320px leveys TAI korkeus)
             p_max = 320
             p_ratio = min(p_max / akt.width, p_max / akt.height)
             p_w = max(1, int(akt.width * p_ratio))
@@ -221,11 +239,8 @@ with col1:
                     st.rerun()
                 ct = st.columns(2)
                 if ct[0].button("🔄 Käännä 90°", use_container_width=True):
-                    # Käännetään kuva
                     uusi_kuva = akt.rotate(-90, expand=True)
                     st.session_state.kuvat[sel_name] = uusi_kuva
-                    
-                    # Päivitetään reaalimaailman leveys (jos 100x50 -> 50x100)
                     vanha_w_mm = st.session_state.get(f"orig_w_{sel_name}", 100)
                     uusi_w_mm = vanha_w_mm * (akt.height / akt.width)
                     st.session_state[f"orig_w_{sel_name}"] = float(uusi_w_mm)
@@ -236,26 +251,29 @@ with col1:
                         st.rerun()
                 if st.button("⏪ Palauta alkuperäinen", use_container_width=True):
                     st.session_state.kuvat[sel_name] = st.session_state.alkup[sel_name].copy()
-                    # Palautetaan myös alkuperäinen leveys jos mahdollista
-                    # (Tässä voisi säilyttää alkup_w_mm session_statessa jos tarpeen)
                     st.rerun()
 
             st.divider()
             mt = st.radio("Määräävä mitta:", ["Leveys", "Korkeus"], horizontal=True)
-            # Haetaan nykyinen leveys mm
+            
+            # --- DYNAAMINEN MITTOJEN LASKENTA ---
+            suhde = akt.height / akt.width
             dw = st.session_state.get(f"orig_w_{sel_name}", 100.0)
-            dh = dw * (akt.height / akt.width)
+            dh = dw * suhde
             
-            sm = st.number_input(f"{mt} (mm)", value=float(dw if mt == "Leveys" else dh))
+            sm = st.number_input(f"Aseta {mt} (mm)", value=float(dw if mt == "Leveys" else dh))
             
-            # Lasketaan lopulliset millimetrit valinnan mukaan
             if mt == "Leveys":
                 w_mm = sm
-                h_mm = sm * (akt.height / akt.width)
+                h_mm = sm * suhde
             else:
                 h_mm = sm
-                w_mm = sm / (akt.height / akt.width)
+                w_mm = sm / suhde
             
+            # Näytetään molemmat mitat dynaamisesti
+            st.markdown(f"### 📏 Koko: **{w_mm:.1f} mm** x **{h_mm:.1f} mm**")
+            # ------------------------------------
+
             cur_dpi = int(akt.width / (w_mm / 25.4)) if w_mm > 0 else 0
             if cur_dpi >= 250: st.success(f"✅ Painolaatu: Erinomainen ({cur_dpi} DPI)")
             elif cur_dpi >= 150: st.warning(f"⚠️ Painolaatu: Välttävä ({cur_dpi} DPI)")
@@ -263,9 +281,7 @@ with col1:
             
             kpl = st.number_input("Määrä", min_value=1, value=1)
             if st.button("🚀 SIJOITA ARKILLE", type="primary", use_container_width=True):
-                w_px, h_px = int(w_mm * DPI_VAKIO), int(h_mm * DPI_VAKIO)
-                # Varmistetaan ettei mitat ole 0
-                w_px, h_px = max(1, w_px), max(1, h_px)
+                w_px, h_px = max(1, int(w_mm * DPI_VAKIO)), max(1, int(h_mm * DPI_VAKIO))
                 b_id = time.time()
                 for _ in range(kpl):
                     x, y = etsi_paikka_nesting(w_px, h_px, st.session_state.occ, SCALE, VALI_PX)
@@ -279,35 +295,70 @@ with col1:
                         break
                 st.rerun()
 
-
 with col2:
     st.subheader("Arkki (1000 x 560 mm)")
+    
+    # Määritellään sarakkeet
     c_undo = st.columns(2)
-    if c_undo[0].button("↩️ Peru viimeisin erä", use_container_width=True):
+    
+    # Lisätään uniikit avaimet (key) painikkeille
+    if c_undo[0].button("↩️ Peru viimeisin sijoitus", key="peru_nappi", use_container_width=True):
         if st.session_state.sijoitukset:
             lb = st.session_state.sijoitukset[-1]['b_id']
             st.session_state.sijoitukset = [s for s in st.session_state.sijoitukset if s['b_id'] != lb]
+            
+            # Lasketaan occ uudelleen
             st.session_state.occ.fill(False)
             for s in st.session_state.sijoitukset:
-                sx, sy, sw, sh = int(s['x']/SCALE), int(s['y']/SCALE), int(np.ceil((s['w']+VALI_PX)/SCALE)), int(np.ceil((s['h']+VALI_PX)/SCALE))
+                sx, sy = int(s['x']/SCALE), int(s['y']/SCALE)
+                sw, sh = int(np.ceil((s['w']+VALI_PX)/SCALE)), int(np.ceil((s['h']+VALI_PX)/SCALE))
                 st.session_state.occ[sy:sy+sh, sx:sx+sw] = True
             st.rerun()
-    if c_undo[1].button("🗑️ Tyhjennä arkki", use_container_width=True):
+
+    if c_undo[1].button("🗑️ Tyhjennä arkki", key="tyhjenna_nappi", use_container_width=True):
         st.session_state.sijoitukset = []
         st.session_state.occ.fill(False)
         st.rerun()
 
+    # Esikatselun piirto
     pohja, m_p, sk = luo_vakio_esikatselupohja(ARKKI_L, ARKKI_K, DPI_VAKIO, PREVIEW_W)
     for s in st.session_state.sijoitukset:
         lw, lh = int(s['w'] * sk), int(s['h'] * sk)
-        pieni = s['img'].resize((lw, lh), Image.NEAREST)
-        pohja.paste(pieni, (int(s['x'] * sk) + m_p, int(s['y'] * sk) + m_p), pieni)
+        if lw > 0 and lh > 0:
+            pieni = s['img'].resize((lw, lh), Image.NEAREST)
+            pohja.paste(pieni, (int(s['x'] * sk) + m_p, int(s['y'] * sk) + m_p), pieni)
     st.image(pohja, use_container_width=True)
 
+
+    # TÄMÄ ON RIVI 340 TAI SEN LÄHELLÄ - VARMISTA SISENNYS
     if st.session_state.sijoitukset:
-        if st.button("📥 Valmistele PNG painoon", type="primary", use_container_width=True):
-            valmis = Image.new("RGBA", (ARKKI_L, ARKKI_K), (0,0,0,0))
-            for s in st.session_state.sijoitukset:
-                valmis.paste(s['img'], (int(s['x']), int(s['y'])), s['img'])
-            buf = io.BytesIO(); valmis.save(buf, format="PNG")
-            st.download_button("Lataa PNG painoon", buf.getvalue(), "arkki.png", "image/png", use_container_width=True)
+        st.divider()
+        
+        # Luodaan oletusnimi ja juokseva numero
+        if "arkki_nro" not in st.session_state:
+            st.session_state.arkki_nro = 100
+            
+        oletus_nimi = f"painoarkki_{st.session_state.arkki_nro}"
+        tiedoston_nimi = st.text_input("Tiedoston nimi", value=oletus_nimi)
+        
+        if st.button("📥 Valmistele PNG painoon (300 DPI)", type="primary", use_container_width=True):
+            with st.spinner("Luodaan tiedostoa..."):
+                valmis = Image.new("RGBA", (ARKKI_L, ARKKI_K), (0, 0, 0, 0))
+                for s in st.session_state.sijoitukset:
+                    valmis.paste(s['img'], (int(s['x']), int(s['y'])), s['img'])
+                
+                buf = io.BytesIO()
+                valmis.save(buf, format="PNG", dpi=(300, 300))
+                
+                # Kasvatetaan numeroa seuraavaa kertaa varten
+                st.session_state.arkki_nro += 1
+                
+                st.download_button(
+                    label="⬇️ LATAA PNG PAINOON",
+                    data=buf.getvalue(),
+                    file_name=f"{tiedoston_nimi}.png",
+                    mime="image/png",
+                    use_container_width=True
+                )
+
+
